@@ -14,7 +14,7 @@ URL = "https://httpstat.us/random/100,200,300,400,500"
 def main():
 	for _ in range(5):
 		try:
-			response = requests.get(URL)
+			response = requests.get(URL, timeout=5, allow_redirects=False)
 
 			if response.status_code // 100 in (1, 2, 3):
 				logger.info(f"Status: {response.status_code}; Body: {response.text}")
