@@ -1,0 +1,103 @@
+- name: playbook with docker installation and script start
+  hosts: servers
+  become: yes
+  vars:
+    container_name: statuses_checker
+
+  tasks:
+    - name: Install dependencies
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+        - git
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - name: Install py packages
+      pip:
+        name:
+          - docker
+          - requests
+        executable: pip3
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install docker-ce
+      ansible.builtin.apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Start docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Clone repository via HTTPS
+      ansible.builtin.git:
+        repo: "https://github.com/ArtgtH/Yadro2.git"
+        dest: "/opt/test"
+        clone: yes
+        update: no
+
+    - name: Build image
+      community.docker.docker_image:
+        name: "{{ container_name }}"
+        source: build
+        build:
+          path: /opt/test/Yadro2/task2
+          dockerfile: Dockerfile
+
+    - name: Run container
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        image: "{{ container_name }}"
+        state: started
+        detach: yes
+
+    - name: Wait
+      wait_for:
+        timeout: 120
+
+    - name: Get container info
+      community.docker.docker_container_info:
+        name: "{{ container_name }}"
+      register: container_info
+
+    - name: Fail if exit code != 0
+      fail:
+        msg: "Container exited with code {{ container_info.container.State.ExitCode }}"
+      when:
+        - container_info.container.State.Status == 'exited'
+        - container_info.container.State.ExitCode != 0
+
+    - name: Get container logs
+      command: "docker logs {{ container_name }}"
+      register: container_logs
+
+    # почему-то пишется в stderr, а не stdout,
+    - name: Show container logs
+      debug:
+        var: container_logs.stderr_lines
